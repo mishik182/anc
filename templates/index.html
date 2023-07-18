@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="UTF-8" />
+    <head>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/free-jqgrid/4.15.5/css/ui.jqgrid.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/free-jqgrid/4.15.5/jquery.jqgrid.min.js"></script>
+
+        <style>
+            /* Загальний стиль таблиці */
+            #grid {
+                font-family: Arial, sans-serif;
+                background-color: #f9f9f9;
+            }
+
+            /* Стиль заголовків стовпців */
+            .ui-jqgrid .ui-jqgrid-htable th div {
+                background-color: #e6e6e6;
+                color: #333333;
+                font-weight: bold;
+                font-size: 15px;
+            }
+
+            /* Стиль комірок таблиці */
+            .ui-jqgrid .ui-jqgrid-btable td {
+                padding: 5px;
+                border-bottom: 1px solid #dddddd;
+                font-size: 15px;
+            }
+
+        </style>
+   </head>
+
+    <body>
+        <div class="container">
+            <table id="grid"></table>
+            <div id="pager"></div>
+        </div>
+    </body>
+
+    <script>
+        let userListUrl = 'http://127.0.0.1:8000/api/v1/employees/';
+        let updatedUserUrl = 'http://127.0.0.1:8000/api/v1/employees/update/';
+        let pageCounter;
+        let subgridTableId;
+        let pagerId;
+
+        const maxLevel = 6
+        const columnModel = [
+            { label: 'ID', name: 'id', width: 30 },
+            { label: 'Name', name: 'name', width: 80, editable: true },
+            {
+                label: 'Job title',
+                name: 'job_title',
+                width: 80,
+                editable: true,
+                edittype: 'select', editoptions: {
+                    value: {
+                        1: 'Касир',
+                        2: 'Медичний представник',
+                        3: 'Фармацевт-лаборант',
+                        4: 'Фармацевт-провізор',
+                        5: 'Фармацевт-консультант',
+                        6: 'Аптечний директор',
+                        7: 'Власник аптеки',
+                    }
+                }
+            },
+            {
+                label: 'Date accepted',
+                name: 'accept_date',
+                width: 50,
+                editable: true,
+                sorttype: 'date',
+                search: true,
+                searchoptions: {
+                    dataInit: function(element) {
+                        $(element).datepicker({
+                            dateFormat: 'yy-mm-dd',
+                            showOn: 'focus'
+                        }).change(function() {
+                            $('#' + subgridTableId)[0].triggerToolbar();
+                        })
+                    },
+                },
+                editoptions: {
+                    dataInit: function(element) {
+                        $(element).datepicker({
+                            dateFormat: 'yy-mm-dd',
+                            showOn: 'focus'
+                        });
+                    },
+                },
+            },
+            { label: 'Email', name: 'email', width: 100, editable: true },
+        ];
+
+        function createSubGrid(subgridId, rowId, level) {
+
+            subgridTableId = subgridId + '_t';
+            pagerId = subgridId + '_pgr';
+
+            $('#' + subgridId).html("<table id='" + subgridTableId + "'></table><div id='" + pagerId + "'></div>");
+
+            $('#' + subgridTableId).jqGrid({
+                url: userListUrl + rowId, // URL для отримання даних підтаблиці
+                datatype: 'json', // Формат даних (json, xml і т.д.)
+                colModel: columnModel,
+                guiStyle: 'bootstrap',
+                subGrid: level < maxLevel,
+                autowidth: true,
+                rowNum: 20,
+                pager: '#' + pagerId,
+                viewrecords: true,
+                caption: 'Sub Grid ' + level,
+                altRows: true,
+
+                jsonReader: {
+                    repeatitems: false,
+                    root: 'results',
+                    records: function (obj) {
+                        return obj.count;
+                    },
+                    page: function () {
+                        pageCounter = $('#' + subgridTableId).getGridParam('page')
+                        return pageCounter;
+                    },
+                    total: function (obj) {
+                        return Math.round(obj.count / 20 + 0.4);
+                    }
+                },
+
+                subGridRowExpanded: function(subgridId, rowId) {
+                    createSubGrid(subgridId, rowId, level + 1);
+                },
+
+                onSelectRow: function(rowId) {
+                    $('#' + subgridTableId).jqGrid('editGridRow', rowId, {
+                        width: 400,
+                        editData: {
+                            id: function() {
+                                return rowId;
+                            }
+                        },
+                        url: updatedUserUrl + rowId, // URL для збереження змін на сервері
+                        mtype: 'PUT',
+                        aftersavefunc: function(rowId, response) {
+                            // Оновлення даних після збереження редагованого рядка
+                            $('#' + subgridTableId).jqGrid('setGridParam', { datatype: 'json' }).trigger('reloadGrid');
+                        },
+                        closeAfterEdit: true,
+                        errorfunc: function(rowId, response) {
+                            // Обробка помилок при збереженні
+                            console.log('Помилка при збереженні: ', response);
+                        },
+                    });
+                },
+            });
+
+            $('#' + subgridTableId).jqGrid('filterToolbar', {
+                Find: 'Search',
+                autosearch: true
+            });
+        };
+
+        $(document).ready(function() {
+            $('#grid').jqGrid({
+                url: userListUrl,
+                datatype: 'json',
+                colModel: columnModel,
+                guiStyle: 'bootstrap',
+                subGrid: true,
+                autowidth: true,
+                pager: '#pager',
+                rowNum: 20,
+                viewrecords: true,
+                caption: 'Employee',
+
+                jsonReader: {
+                    repeatitems: false,
+                    root: 'results',
+                    records: function (obj) {
+                        return obj.count;
+                    },
+                    page: function () {
+                        pageCounter = $('#grid').getGridParam('page')
+                        return pageCounter;
+                    },
+                    total: function (obj) {
+                        return Math.round(obj.count / 20 + 0.4);
+                    }
+                },
+
+                subGridRowExpanded: function(subgridId, rowId) {
+                    createSubGrid(subgridId, rowId, 1);
+                },
+
+                onSelectRow: function(rowId) {
+                    $('#grid').jqGrid('editGridRow', rowId, {
+                        width: 400,
+                        editData: {
+                            id: function() {
+                                return rowId;
+                            }
+                        },
+                        url: updatedUserUrl + rowId, // URL для збереження змін на сервері
+                        mtype: 'PUT',
+                        closeAfterEdit: true,
+                        aftersavefunc: function(rowId, response) {
+                            // Оновлення даних після збереження редагованого рядка
+                            $('#grid').jqGrid('setGridParam', { datatype: 'json' }).trigger('reloadGrid');
+                        },
+                        errorfunc: function(rowId, response) {
+                            // Обробка помилок при збереженні
+                            console.log('Помилка при збереженні: ', response);
+                        },
+                    });
+                },
+            });
+        });
+
+    </script>
+
+</html>
